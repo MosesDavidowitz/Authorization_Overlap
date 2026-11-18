@@ -10,7 +10,7 @@
 <h1>Authorization Overlap Check</h1><p class="sub">Upload the active authorizations CSV to find patients with more than one currently active, overlapping authorization. Files stay on your computer.</p>
 <div class="card"><label class="drop" id="drop"><b>Choose file or drop it here</b><span>.csv</span><input id="file" type="file" accept=".csv,text/csv" class="hidden"></label><div id="status" class="status" style="margin-top:12px"></div></div>
 <div id="results" class="hidden"><div class="card"><div class="row"><div><div class="label">Subject</div><div class="subject" id="subject"></div></div><button class="btn ghost" id="copySubject">Copy subject</button></div></div><div class="card"><div class="row"><div class="label" style="margin:0">Email</div><button class="btn" id="copyBody">Copy for email</button></div><div id="emailBox"></div></div></div>
-<footer>A Davidowitz Project © <span id="yr">2026</span> · Authorization Overlap Check v3</footer></div>
+<footer>A Davidowitz Project © <span id="yr">2026</span> · Authorization Overlap Check v4</footer></div>
 <script>
 'use strict';
 const $=id=>document.getElementById(id);$('yr').textContent=new Date().getFullYear();
@@ -22,10 +22,20 @@ function validDate(y,m,d){let t=Date.UTC(y,m-1,d),x=new Date(t);return x.getUTCF
 function overlap(a,b){if(a.fromN===null||a.toN===null||b.fromN===null||b.toN===null)return null;return a.fromN<=b.toN&&b.fromN<=a.toN}
 function analyze(csv){
  const matrix=parseCSV(csv);if(matrix.length<2)throw Error('No authorization records found.');
- const header=matrix[0].map(x=>x.trim().toLowerCase().replace(/[^a-z0-9]/g,''));
  const fields=['PrimaryContract','FirstName','LastName','AdmissionID','Status','AuthFromDate','AuthToDate'],idx={};
- for(const field of fields){idx[field]=header.indexOf(field.toLowerCase());if(idx[field]<0)throw Error('Missing required column: '+field)}
- const data=matrix.slice(1).map((r,i)=>{let v=n=>(r[idx[n]]??'').trim();let first=v('FirstName'),last=v('LastName'),id=v('AdmissionID'),from=v('AuthFromDate'),to=v('AuthToDate');return {row:i+2,first,last,name:[first,last].filter(Boolean).join(' '),id,contract:v('PrimaryContract'),status:v('Status'),from,to,fromN:dateValue(from),toN:dateValue(to),nameKey:normalize(first)+'|'+normalize(last),idKey:normalize(id)}});
+ // Job exports may start with a pageHeader_Note or blank lines before the actual column headers.
+ // Search the first 10 nonempty CSV rows instead of assuming the first row is the header.
+ let headerRow=-1;
+ for(let i=0;i<Math.min(matrix.length,10);i++){
+   const header=matrix[i].map(x=>x.replace(/^\uFEFF/,'').trim().toLowerCase().replace(/[^a-z0-9]/g,''));
+   if(fields.every(field=>header.includes(field.toLowerCase()))){
+     headerRow=i;
+     for(const field of fields)idx[field]=header.indexOf(field.toLowerCase());
+     break;
+   }
+ }
+ if(headerRow<0)throw Error('Could not find the required authorization column headers in the first 10 rows.');
+ const data=matrix.slice(headerRow+1).map((r,i)=>{let v=n=>(r[idx[n]]??'').trim();let first=v('FirstName'),last=v('LastName'),id=v('AdmissionID'),from=v('AuthFromDate'),to=v('AuthToDate');return {row:i+headerRow+2,first,last,name:[first,last].filter(Boolean).join(' '),id,contract:v('PrimaryContract'),status:v('Status'),from,to,fromN:dateValue(from),toN:dateValue(to),nameKey:normalize(first)+'|'+normalize(last),idKey:normalize(id)}});
  const today=new Date(),todayN=Date.UTC(today.getFullYear(),today.getMonth(),today.getDate());
  const invalid=data.filter(r=>r.fromN===null||r.toN===null||r.fromN>r.toN);
  const active=data.filter(r=>r.fromN!==null&&r.toN!==null&&r.fromN<=todayN&&r.toN>=todayN);
